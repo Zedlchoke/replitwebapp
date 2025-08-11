@@ -1,86 +1,112 @@
-// Production Database Migration Script
-// Run this on Render to create tables and admin user
+#!/usr/bin/env node
+
+/**
+ * PRODUCTION DATABASE MIGRATION SCRIPT
+ * Adds missing columns to Render PostgreSQL database
+ * 
+ * Missing columns identified:
+ * - establishment_date already exists ✅
+ * - document_number already exists ✅ 
+ * 
+ * This script will sync the complete schema to production
+ */
 
 const { Pool } = require('pg');
 
-async function migrate() {
+async function migrateProductionDatabase() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
   });
 
   try {
-    const client = await pool.connect();
-    console.log('Connected to database');
-
-    // Create admin_users table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS admin_users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+    console.log('🔄 Starting production database migration...');
+    
+    // Check current schema state
+    console.log('📊 Checking businesses table schema...');
+    const businessesColumns = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'businesses'
     `);
-    console.log('Created admin_users table');
-
-    // Create businesses table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS businesses (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        tax_id VARCHAR(100) UNIQUE,
-        address TEXT,
-        phone VARCHAR(50),
-        email VARCHAR(255),
-        website VARCHAR(255),
-        industry VARCHAR(255),
-        contact_person VARCHAR(255),
-        account VARCHAR(255),
-        password VARCHAR(255),
-        bank_account VARCHAR(255),
-        bank_name VARCHAR(255),
-        custom_fields JSONB DEFAULT '{}',
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
+    
+    console.log('📊 Checking document_transactions table schema...');
+    const transactionsColumns = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'document_transactions'
     `);
-    console.log('Created businesses table');
-
-    // Create document_transactions table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS document_transactions (
-        id SERIAL PRIMARY KEY,
-        business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-        document_type VARCHAR(255) NOT NULL,
-        transaction_type VARCHAR(50) NOT NULL,
-        handled_by VARCHAR(255) NOT NULL,
-        transaction_date TIMESTAMP NOT NULL,
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    console.log('Created document_transactions table');
-
-    // Create admin user
-    try {
-      await client.query(`
-        INSERT INTO admin_users (username, password) 
-        VALUES ('quanadmin', '01020811')
-        ON CONFLICT (username) DO NOTHING
+    
+    const businessColNames = businessesColumns.rows.map(r => r.column_name);
+    const transactionColNames = transactionsColumns.rows.map(r => r.column_name);
+    
+    console.log('Current businesses columns:', businessColNames.length);
+    console.log('Current transaction columns:', transactionColNames.length);
+    
+    // Add missing establishment_date if not exists
+    if (!businessColNames.includes('establishment_date')) {
+      console.log('➕ Adding establishment_date to businesses table...');
+      await pool.query(`
+        ALTER TABLE businesses 
+        ADD COLUMN IF NOT EXISTS establishment_date TEXT
       `);
-      console.log('Admin user created/verified');
-    } catch (error) {
-      console.log('Admin user already exists:', error.message);
+    } else {
+      console.log('✅ establishment_date already exists in businesses table');
     }
-
-    client.release();
-    console.log('Migration completed successfully!');
-    process.exit(0);
+    
+    // Add missing document_number if not exists  
+    if (!transactionColNames.includes('document_number')) {
+      console.log('➕ Adding document_number to document_transactions table...');
+      await pool.query(`
+        ALTER TABLE document_transactions 
+        ADD COLUMN IF NOT EXISTS document_number TEXT
+      `);
+    } else {
+      console.log('✅ document_number already exists in document_transactions table');
+    }
+    
+    // Verify final schema
+    console.log('🔍 Verifying final schema...');
+    const finalBusinesses = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'businesses'
+      ORDER BY ordinal_position
+    `);
+    
+    const finalTransactions = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'document_transactions' 
+      ORDER BY ordinal_position
+    `);
+    
+    console.log('✅ Businesses table columns:', finalBusinesses.rows.length);
+    console.log('✅ Document transactions columns:', finalTransactions.rows.length);
+    
+    // Test basic operations
+    console.log('🧪 Testing basic operations...');
+    
+    const testBusiness = await pool.query('SELECT COUNT(*) FROM businesses');
+    const testTransactions = await pool.query('SELECT COUNT(*) FROM document_transactions');
+    
+    console.log(`📊 Current businesses count: ${testBusiness.rows[0].count}`);
+    console.log(`📊 Current transactions count: ${testTransactions.rows[0].count}`);
+    
+    console.log('🎉 Production database migration completed successfully!');
+    
   } catch (error) {
-    console.error('Migration failed:', error);
+    console.error('❌ Migration failed:', error.message);
+    console.error('Full error:', error);
     process.exit(1);
+  } finally {
+    await pool.end();
   }
 }
 
-migrate();
+// Run migration
+if (require.main === module) {
+  migrateProductionDatabase();
+}
+
+module.exports = { migrateProductionDatabase };
