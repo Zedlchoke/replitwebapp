@@ -1,31 +1,23 @@
 services:
   - type: web
-    name: webapp
+    name: long-quan-business-management
     env: node
     plan: free
-    buildCommand: npm ci && npm run build
+    buildCommand: npm install && npm run build
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 5000
       - key: DATABASE_URL
         fromDatabase:
-          name: webapp-db
+          name: long-quan-db
           property: connectionString
-      - key: GOOGLE_CLOUD_PROJECT
-        sync: false
-      - key: GOOGLE_CLOUD_STORAGE_BUCKET
-        sync: false
-      - key: GOOGLE_APPLICATION_CREDENTIALS
-        sync: false
-    healthCheckPath: /api/health
-    autoDeploy: true
+      - key: PORT
+        value: 10000
 
 databases:
-  - name: webapp-db
-    databaseName: webapp
-    user: webapp
+  - name: long-quan-db
+    databaseName: long_quan_business
+    user: long_quan_user
     plan: free
-    ipAllowList: []

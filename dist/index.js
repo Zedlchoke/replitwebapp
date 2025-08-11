@@ -256,6 +256,8 @@ var init_db = __esm({
         "DATABASE_URL must be set. Did you forget to provision a database?"
       );
     }
+    console.log("\u{1F50C} Connecting to database...");
+    console.log("\u{1F4CD} Database URL configured:", process.env.DATABASE_URL ? "Yes" : "No");
     connectionConfig = {
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
@@ -266,16 +268,19 @@ var init_db = __esm({
     };
     pool = new Pool(connectionConfig);
     db = drizzle(pool, { schema: schema_exports });
+    pool.on("connect", () => {
+      console.log("\u2705 Database connected successfully");
+    });
     pool.on("error", (err) => {
-      console.error("Unexpected error on idle client", err);
+      console.error("\u274C Unexpected database error:", err);
     });
     process.on("SIGINT", async () => {
-      console.log("Received SIGINT, closing database connections...");
+      console.log("\u{1F504} Received SIGINT, closing database connections...");
       await pool.end();
       process.exit(0);
     });
     process.on("SIGTERM", async () => {
-      console.log("Received SIGTERM, closing database connections...");
+      console.log("\u{1F504} Received SIGTERM, closing database connections...");
       await pool.end();
       process.exit(0);
     });
@@ -325,10 +330,6 @@ var DatabaseStorage = class {
       total: totalResult[0]?.count || 0
     };
   }
-  async getAllBusinessesForAutocomplete() {
-    const businessList = await db.select().from(businesses).orderBy(businesses.name);
-    return businessList;
-  }
   async updateBusiness(business) {
     const { id, ...updateData } = business;
     const [updatedBusiness] = await db.update(businesses).set(updateData).where(eq(businesses.id, id)).returning();
@@ -373,7 +374,7 @@ var DatabaseStorage = class {
   }
   // Document transaction operations
   async createDocumentTransaction(transaction) {
-    const [createdTransaction] = await db.insert(documentTransactions).values(transaction).returning();
+    const [createdTransaction] = await db.insert(documentTransactions).values([transaction]).returning();
     return createdTransaction;
   }
   async getDocumentTransactionsByBusinessId(businessId) {
@@ -404,6 +405,9 @@ var DatabaseStorage = class {
       console.error("Error updating signed file path:", error);
       return false;
     }
+  }
+  async getAllBusinessesForAutocomplete() {
+    return await db.select().from(businesses).orderBy(businesses.name);
   }
   async deleteDocumentTransaction(id) {
     const result = await db.delete(documentTransactions).where(eq(documentTransactions.id, id));
@@ -527,34 +531,6 @@ var DatabaseStorage = class {
     }
     console.log("Database initialization completed");
   }
-  // Business Account implementation
-  async getBusinessAccountByBusinessId(businessId) {
-    return this.getBusinessAccount(businessId);
-  }
-  async getBusinessAccount(businessId) {
-    const [account] = await db.select().from(businessAccounts).where(eq(businessAccounts.businessId, businessId));
-    return account || null;
-  }
-  async createBusinessAccount(account) {
-    const [createdAccount] = await db.insert(businessAccounts).values(account).returning();
-    return createdAccount;
-  }
-  async updateBusinessAccount(businessId, account) {
-    const [updatedAccount] = await db.update(businessAccounts).set(account).where(eq(businessAccounts.businessId, businessId)).returning();
-    if (!updatedAccount) {
-      return this.createBusinessAccount({ ...account, businessId });
-    }
-    return updatedAccount;
-  }
-  async updateDocumentPdf(id, pdfPath) {
-    try {
-      const result = await db.update(documentTransactions).set({ signedFilePath: pdfPath }).where(eq(documentTransactions.id, id)).returning();
-      return result.length > 0;
-    } catch (error) {
-      console.error("Error updating document PDF:", error);
-      return false;
-    }
-  }
   // New authentication methods
   async authenticateUser(login) {
     const { userType, identifier, password } = login;
@@ -592,6 +568,27 @@ var DatabaseStorage = class {
       console.error("Error updating business access code:", error);
       return false;
     }
+  }
+  // Business Account methods implementation
+  async getBusinessAccount(businessId) {
+    try {
+      const [account] = await db.select().from(businessAccounts).where(eq(businessAccounts.businessId, businessId));
+      return account || null;
+    } catch (error) {
+      console.error("Error fetching business account:", error);
+      return null;
+    }
+  }
+  async createBusinessAccount(account) {
+    const [createdAccount] = await db.insert(businessAccounts).values(account).returning();
+    return createdAccount;
+  }
+  async updateBusinessAccount(businessId, account) {
+    const [updatedAccount] = await db.update(businessAccounts).set(account).where(eq(businessAccounts.businessId, businessId)).returning();
+    if (!updatedAccount) {
+      return this.createBusinessAccount({ ...account, businessId });
+    }
+    return updatedAccount;
   }
 };
 var storage = new DatabaseStorage();
@@ -736,11 +733,11 @@ var ObjectStorageService = class {
     await objectFile.delete();
   }
 };
-function parseObjectPath(path3) {
-  if (!path3.startsWith("/")) {
-    path3 = `/${path3}`;
+function parseObjectPath(path4) {
+  if (!path4.startsWith("/")) {
+    path4 = `/${path4}`;
   }
-  const pathParts = path3.split("/");
+  const pathParts = path4.split("/");
   if (pathParts.length < 3) {
     throw new Error("Invalid path: must contain at least a bucket name");
   }
@@ -785,25 +782,8 @@ async function signObjectURL({
 // server/routes.ts
 var DELETE_PASSWORD = "0102";
 async function registerRoutes(app2) {
-  app2.get("/api/health", async (req, res) => {
-    try {
-      const { pool: pool2 } = await Promise.resolve().then(() => (init_db(), db_exports));
-      const client = await pool2.connect();
-      await client.query("SELECT 1 as health_check");
-      client.release();
-      res.json({
-        status: "ok",
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        database: "connected"
-      });
-    } catch (error) {
-      console.error("Health check failed:", error);
-      res.status(500).json({
-        status: "error",
-        message: "Database connection failed",
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-    }
+  app2.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
   });
   app2.post("/api/initialize-db", async (req, res) => {
     try {
@@ -1264,10 +1244,7 @@ async function registerRoutes(app2) {
         ...req.body,
         businessId
       });
-      console.log(`\u{1F50D} Server received request body:`, req.body);
-      console.log(`\u{1F50D} Server documentDetails:`, req.body.documentDetails);
-      console.log(`\u{1F50D} Validated data documentDetails:`, validatedData.documentDetails);
-      console.log(`Creating document transaction for business ID: ${businessId}`, { businessId, documentDetails: validatedData.documentDetails, deliveryCompany: validatedData.deliveryCompany });
+      console.log(`Creating document transaction for business ID: ${businessId}`, { businessId, documents: validatedData.documents, deliveryCompany: validatedData.deliveryCompany });
       const transaction = await storage.createDocumentTransaction(validatedData);
       console.log(`Created transaction with ID: ${transaction.id} for business ${businessId}`);
       res.status(201).json(transaction);
@@ -1290,7 +1267,7 @@ async function registerRoutes(app2) {
       }
       console.log(`Fetching documents for business ID: ${businessId}`);
       const transactions = await storage.getDocumentTransactionsByBusinessId(businessId);
-      console.log(`Found ${transactions.length} transactions for business ${businessId}:`, transactions.map((t) => ({ id: t.id, businessId: t.businessId, documentDetails: t.documentDetails })));
+      console.log(`Found ${transactions.length} transactions for business ${businessId}:`, transactions.map((t) => ({ id: t.id, businessId: t.businessId, documents: t.documents })));
       res.json(transactions);
     } catch (error) {
       console.error("Error fetching document transactions:", error);
@@ -1417,7 +1394,7 @@ async function registerRoutes(app2) {
   app2.post("/api/documents/pdf-upload", async (req, res) => {
     try {
       const objectStorageService = new ObjectStorageService();
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const uploadURL = await objectStorageService.getPDFUploadURL();
       res.json({ uploadURL });
     } catch (error) {
       console.error("Error getting PDF upload URL:", error);
@@ -1427,7 +1404,7 @@ async function registerRoutes(app2) {
   app2.get("/documents/:documentPath(*)", async (req, res) => {
     const objectStorageService = new ObjectStorageService();
     try {
-      const pdfFile = await objectStorageService.getObjectEntityFile(`/objects/${req.params.documentPath}`);
+      const pdfFile = await objectStorageService.getPDFFile(req.path);
       objectStorageService.downloadObject(pdfFile, res);
     } catch (error) {
       console.error("Error accessing PDF document:", error);
@@ -1440,7 +1417,7 @@ async function registerRoutes(app2) {
   app2.post("/api/objects/upload", async (req, res) => {
     try {
       const objectStorageService = new ObjectStorageService();
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const uploadURL = await objectStorageService.getPDFUploadURL();
       res.json({ uploadURL });
     } catch (error) {
       console.error("Error getting upload URL:", error);
@@ -1450,7 +1427,7 @@ async function registerRoutes(app2) {
   app2.get("/objects/:objectPath(*)", async (req, res) => {
     try {
       const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(`/objects/${req.params.objectPath}`);
+      const objectFile = await objectStorageService.getPDFFile(`/documents/${req.params.objectPath}`);
       objectStorageService.downloadObject(objectFile, res);
     } catch (error) {
       console.error("Error downloading object:", error);
@@ -1631,98 +1608,16 @@ async function setupVite(app2, server) {
     }
   });
 }
-function serveStatic(app2) {
-  const distPath = path2.resolve(import.meta.dirname, "public");
-  if (!fs.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`
-    );
-  }
-  app2.use(express.static(distPath));
-  app2.use("*", (_req, res) => {
-    res.sendFile(path2.resolve(distPath, "index.html"));
-  });
-}
-
-// server/middleware.ts
-function errorHandler(err, req, res, next) {
-  console.error("Error details:", {
-    message: err.message,
-    stack: err.stack,
-    url: req.url,
-    method: req.method,
-    body: req.body,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
-  const status = err.status || err.statusCode || 500;
-  const message = process.env.NODE_ENV === "production" ? "Internal Server Error" : err.message || "Internal Server Error";
-  res.status(status).json({
-    success: false,
-    message,
-    ...process.env.NODE_ENV === "development" && {
-      stack: err.stack,
-      details: err
-    }
-  });
-}
-function requestLogger(req, res, next) {
-  const start = Date.now();
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    console.log(`${req.method} ${req.path} ${res.statusCode} - ${duration}ms`);
-  });
-  next();
-}
-function timeoutHandler(timeoutMs = 3e4) {
-  return (req, res, next) => {
-    const timeout = setTimeout(() => {
-      if (!res.headersSent) {
-        res.status(408).json({
-          success: false,
-          message: "Request timeout"
-        });
-      }
-    }, timeoutMs);
-    res.on("finish", () => {
-      clearTimeout(timeout);
-    });
-    next();
-  };
-}
-function bodyParserErrorHandler(err, req, res, next) {
-  if (err instanceof SyntaxError && "body" in err) {
-    console.error("Body parsing error:", err.message);
-    return res.status(400).json({
-      success: false,
-      message: "Invalid JSON in request body"
-    });
-  }
-  next(err);
-}
 
 // server/index.ts
+import path3 from "path";
+import fs2 from "fs";
 var app = express2();
-app.set("trust proxy", 1);
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  if (req.method === "OPTIONS") {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
-app.use(timeoutHandler(3e4));
-app.use(express2.json({ limit: "50mb" }));
-app.use(express2.urlencoded({ extended: true, limit: "50mb" }));
-app.use(bodyParserErrorHandler);
-if (process.env.NODE_ENV !== "production") {
-  app.use(requestLogger);
-}
+app.use(express2.json());
+app.use(express2.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   const start = Date.now();
-  const path3 = req.path;
+  const path4 = req.path;
   let capturedJsonResponse = void 0;
   const originalResJson = res.json;
   res.json = function(bodyJson, ...args) {
@@ -1731,8 +1626,8 @@ app.use((req, res, next) => {
   };
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path3.startsWith("/api")) {
-      let logLine = `${req.method} ${path3} ${res.statusCode} in ${duration}ms`;
+    if (path4.startsWith("/api")) {
+      let logLine = `${req.method} ${path4} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
@@ -1746,25 +1641,57 @@ app.use((req, res, next) => {
 });
 (async () => {
   try {
-    log("Initializing database...");
+    log("\u{1F50C} Testing database connection...");
+    const { pool: pool2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+    const client = await pool2.connect();
+    await client.query("SELECT NOW()");
+    client.release();
+    log("\u2705 Database connection successful");
+    log("\u{1F504} Initializing database schema...");
     await storage.initializeDatabase();
-    log("Database initialization completed");
+    log("\u2705 Database initialization completed");
   } catch (error) {
-    log(`Database initialization failed: ${error}`);
+    log(`\u274C Database error: ${error}`);
+    log("\u{1F504} Continuing without database initialization...");
   }
   const server = await registerRoutes(app);
-  app.use(errorHandler);
+  app.use((err, _req, res, _next) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+    res.status(status).json({ message });
+    throw err;
+  });
+  const buildPath = path3.join(process.cwd(), "dist", "public");
+  if (!fs2.existsSync(buildPath)) {
+    console.warn(`\u26A0\uFE0F Client build not found at: ${buildPath}`);
+    console.warn(`\u26A0\uFE0F Please run 'npm run build' to build the client`);
+    console.warn(`\u26A0\uFE0F Continuing without static file serving...`);
+  } else {
+    app.use(express2.static(buildPath));
+    console.log(`\u2705 Serving static files from: ${buildPath}`);
+  }
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+    app.get("*", (req, res) => {
+      const indexPath = path3.join(buildPath, "index.html");
+      if (fs2.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(503).json({
+          error: "Client application not available",
+          message: "Please run 'npm run build' to build the client application",
+          apiHealth: "OK - Backend is running"
+        });
+      }
+    });
   }
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const PORT = parseInt(process.env.PORT || "5000", 10);
   server.listen({
-    port,
+    port: PORT,
     host: "0.0.0.0",
     reusePort: true
   }, () => {
-    log(`serving on port ${port}`);
+    log(`serving on port ${PORT}`);
   });
 })();

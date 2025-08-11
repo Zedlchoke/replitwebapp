@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storage } from "./storage";
+import path from 'path';
+import fs from 'fs';
 
 const app = express();
 app.use(express.json());
@@ -46,7 +48,7 @@ app.use((req, res, next) => {
     await client.query('SELECT NOW()');
     client.release();
     log("✅ Database connection successful");
-    
+
     log("🔄 Initializing database schema...");
     await storage.initializeDatabase();
     log("✅ Database initialization completed");
@@ -66,17 +68,43 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // Serve static files from client build
+  const buildPath = path.join(process.cwd(), "dist", "public");
+  if (!fs.existsSync(buildPath)) {
+    console.warn(`⚠️ Client build not found at: ${buildPath}`);
+    console.warn(`⚠️ Please run 'npm run build' to build the client`);
+    console.warn(`⚠️ Continuing without static file serving...`);
+  } else {
+    app.use(express.static(buildPath));
+    console.log(`✅ Serving static files from: ${buildPath}`);
+  }
+
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+    // Catch-all handler: send back React's index.html file for client-side routing
+    app.get("*", (req, res) => {
+      const indexPath = path.join(buildPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(503).json({ 
+          error: "Client application not available", 
+          message: "Please run 'npm run build' to build the client application",
+          apiHealth: "OK - Backend is running"
+        });
+      }
+    });
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
-  // This is required for Render and other cloud platforms
+  // Other ports are firewalled. Default to 5000 if not specified.
+  // this serves both the API and the client.
+  // It is the only port that is not firewalled.
   const PORT = parseInt(process.env.PORT || '5000', 10);
 
   server.listen({
