@@ -2,7 +2,7 @@ services:
   - type: web
     name: webapp
     env: node
-    plan: starter
+    plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
     envVars:
@@ -27,5 +27,5 @@ databases:
   - name: webapp-db
     databaseName: webapp
     user: webapp
-    plan: starter
+    plan: free
     ipAllowList: []
