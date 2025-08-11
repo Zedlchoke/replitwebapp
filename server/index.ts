@@ -38,13 +38,22 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Initialize database on startup
+  // Test database connection first
   try {
-    log("Initializing database...");
+    log("🔌 Testing database connection...");
+    const { pool } = await import("./db");
+    const client = await pool.connect();
+    await client.query('SELECT NOW()');
+    client.release();
+    log("✅ Database connection successful");
+    
+    log("🔄 Initializing database schema...");
     await storage.initializeDatabase();
-    log("Database initialization completed");
+    log("✅ Database initialization completed");
   } catch (error) {
-    log(`Database initialization failed: ${error}`);
+    log(`❌ Database error: ${error}`);
+    log("🔄 Continuing without database initialization...");
+    // Continue running to allow UI access even if database fails
   }
 
   const server = await registerRoutes(app);
