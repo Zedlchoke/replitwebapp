@@ -77,6 +77,7 @@ async function migrateProductionDatabase() {
     console.log('✅ Admin user created');
 
     // Thêm missing columns nếu cần
+    // Thêm missing columns cho businesses table
     try {
       await pool.query(`
         ALTER TABLE businesses 
