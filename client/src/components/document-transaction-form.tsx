@@ -274,11 +274,34 @@ export function DocumentTransactionForm({ business }: DocumentTransactionFormPro
     // Tự động set thời gian hiện tại nếu để trống
     const currentDateTime = new Date().toISOString().slice(0, 16); // Format: YYYY-MM-DDTHH:mm
     
+    // Tạo documentDetails từ documentItems
+    const documentDetails: Record<string, {quantity: number, unit: string, notes?: string}> = {};
+    documentItems.forEach(item => {
+      if (item.type.trim()) {
+        documentDetails[item.type] = {
+          quantity: item.quantity,
+          unit: item.unit,
+          notes: item.notes || ""
+        };
+      }
+    });
+
+    // Tạo documentType summary 
+    const documentCount = Object.keys(documentDetails).length;
+    const summaryParts = Object.entries(documentDetails).map(([type, details]) => 
+      `${details.quantity} ${details.unit} ${type}`);
+    const documentSummary = `${documentCount} loại hồ sơ: ${summaryParts.join(", ")}`;
+    
     const submissionData = {
       ...data,
+      documentType: documentSummary,
+      documentDetails: documentDetails,
       deliveryDate: data.deliveryDate || currentDateTime,
       receivingDate: data.receivingDate || currentDateTime,
     };
+    
+    console.log('🚀 Submitting transaction data:', submissionData);
+    console.log('🔍 documentDetails structure:', JSON.stringify(submissionData.documentDetails, null, 2));
     
     createTransaction.mutate(submissionData);
   };
