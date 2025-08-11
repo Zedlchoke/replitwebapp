@@ -24,6 +24,11 @@ import {
 const DELETE_PASSWORD = "0102";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Health check endpoint for deployment
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   // Database initialization endpoint
   app.post("/api/initialize-db", async (req, res) => {
     try {
@@ -109,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = parseInt(req.query.limit as string) || 10;
       const sortBy = req.query.sortBy as string || 'createdAt'; // createdAt, name, taxId
       const sortOrder = req.query.sortOrder as string || 'asc'; // asc, desc
-      
+
       const result = await storage.getAllBusinesses(page, limit, sortBy, sortOrder);
       res.json(result);
     } catch (error) {
@@ -162,11 +167,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       if (error instanceof Error && error.message.includes("duplicate key")) {
         return res.status(400).json({ message: "Mã số thuế đã tồn tại" });
       }
-      
+
       console.error("Error creating business:", error);
       res.status(500).json({ message: "Lỗi khi tạo doanh nghiệp mới" });
     }
@@ -182,7 +187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validatedData = updateBusinessSchema.parse({ ...req.body, id });
       const business = await storage.updateBusiness(validatedData);
-      
+
       if (!business) {
         return res.status(404).json({ message: "Không tìm thấy doanh nghiệp" });
       }
@@ -195,7 +200,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error updating business:", error);
       res.status(500).json({ message: "Lỗi khi cập nhật doanh nghiệp" });
     }
@@ -214,7 +219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error searching businesses:", error);
       res.status(500).json({ message: "Lỗi khi tìm kiếm doanh nghiệp" });
     }
@@ -229,7 +234,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const validatedData = deleteBusinessSchema.parse({ ...req.body, id });
-      
+
       if (validatedData.password !== DELETE_PASSWORD) {
         return res.status(403).json({ message: "Mật khẩu không đúng" });
       }
@@ -247,7 +252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error deleting business:", error);
       res.status(500).json({ message: "Lỗi khi xóa doanh nghiệp" });
     }
@@ -255,7 +260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Simple token storage for authentication - updated for new system
   const authTokens = new Map<string, { userType: string; userData: any }>();
-  
+
   function generateToken(): string {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
   }
@@ -265,7 +270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = userLoginSchema.parse(req.body);
       const authResult = await storage.authenticateUser(validatedData);
-      
+
       if (!authResult) {
         return res.status(401).json({ message: "Thông tin đăng nhập không đúng" });
       }
@@ -288,7 +293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error during login:", error);
       res.status(500).json({ message: "Lỗi khi đăng nhập" });
     }
@@ -299,7 +304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = loginSchema.parse(req.body);
       const admin = await storage.authenticateAdmin(validatedData);
-      
+
       if (!admin) {
         return res.status(401).json({ message: "Tài khoản hoặc mật khẩu không đúng" });
       }
@@ -319,7 +324,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error during admin login:", error);
       res.status(500).json({ message: "Lỗi khi đăng nhập admin" });
     }
@@ -336,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/auth/me", async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     const authData = token ? authTokens.get(token) : null;
-    
+
     if (authData) {
       res.json({ 
         isAuthenticated: true, 
@@ -354,14 +359,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '');
       const authData = token ? authTokens.get(token) : null;
-      
+
       if (!authData || authData.userType !== "admin") {
         return res.status(401).json({ message: "Chưa đăng nhập hoặc không có quyền" });
       }
 
       const validatedData = changePasswordSchema.parse(req.body);
       const success = await storage.changeAdminPassword(authData.userData.username, validatedData);
-      
+
       if (!success) {
         return res.status(400).json({ message: "Mật khẩu hiện tại không đúng" });
       }
@@ -374,7 +379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error changing password:", error);
       res.status(500).json({ message: "Lỗi khi đổi mật khẩu" });
     }
@@ -385,7 +390,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '');
       const authData = token ? authTokens.get(token) : null;
-      
+
       if (!authData || authData.userType !== "admin") {
         return res.status(401).json({ message: "Chỉ admin mới có quyền thay đổi mã truy cập" });
       }
@@ -457,7 +462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("Calling updateDocumentTransactionPdf with:", { id, normalizedPath, fileName });
       const success = await storage.updateDocumentTransactionPdf(id, normalizedPath, fileName);
       console.log("updateDocumentTransactionPdf result:", success);
-      
+
       if (!success) {
         return res.status(404).json({ message: "Không tìm thấy giao dịch" });
       }
@@ -520,10 +525,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(transaction.pdfFilePath);
-      
+
       // Pass custom filename to downloadObject function
       const fileName = transaction.pdfFileName || `transaction_${id}.pdf`;
-      
+
       await objectStorageService.downloadObject(objectFile, res, 3600, fileName);
     } catch (error) {
       console.error("Error downloading PDF:", error);
@@ -585,7 +590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body, 
         businessId 
       });
-      
+
       console.log(`Creating document transaction for business ID: ${businessId}`, { businessId, documents: validatedData.documents, deliveryCompany: validatedData.deliveryCompany });
       const transaction = await storage.createDocumentTransaction(validatedData);
       console.log(`Created transaction with ID: ${transaction.id} for business ${businessId}`);
@@ -597,7 +602,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error creating document transaction:", error);
       res.status(500).json({ message: "Lỗi khi tạo giao dịch hồ sơ" });
     }
@@ -685,7 +690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error deleting document transaction:", error);
       res.status(500).json({ message: "Lỗi khi xóa giao dịch hồ sơ" });
     }
@@ -713,7 +718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error creating business account:", error);
       res.status(500).json({ message: "Lỗi khi tạo tài khoản doanh nghiệp" });
     }
@@ -743,7 +748,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validatedData = updateBusinessAccountSchema.parse(req.body);
       const account = await storage.updateBusinessAccount(businessId, validatedData);
-      
+
       if (!account) {
         return res.status(404).json({ message: "Không tìm thấy tài khoản" });
       }
@@ -756,7 +761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: error.errors 
         });
       }
-      
+
       console.error("Error updating business account:", error);
       res.status(500).json({ message: "Lỗi khi cập nhật tài khoản" });
     }
@@ -819,7 +824,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '');
       const authData = token ? authTokens.get(token) : null;
-      
+
       if (!authData) {
         return res.status(401).json({ message: "Chưa đăng nhập" });
       }
@@ -851,7 +856,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '');
       const authData = token ? authTokens.get(token) : null;
-      
+
       if (!authData) {
         return res.status(401).json({ message: "Chưa đăng nhập" });
       }
