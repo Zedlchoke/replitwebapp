@@ -13,7 +13,11 @@ console.log('📍 Database URL configured:', process.env.DATABASE_URL ? 'Yes' : 
 
 const connectionConfig = {
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: process.env.NODE_ENV === 'production' ? { 
+    rejectUnauthorized: false,
+    ca: process.env.DB_SSL_CA,
+    mode: process.env.DB_SSL_MODE || 'require'
+  } : false,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
   max: 10,
